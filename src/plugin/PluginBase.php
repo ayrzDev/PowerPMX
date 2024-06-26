@@ -23,11 +23,14 @@ declare(strict_types=1);
 
 namespace pocketmine\plugin;
 
+use pocketmine\block\CustomBlockFactory;
 use pocketmine\command\Command;
 use pocketmine\command\CommandExecutor;
 use pocketmine\command\CommandSender;
 use pocketmine\command\PluginCommand;
+use pocketmine\event\CustomEvent;
 use pocketmine\lang\KnownTranslationFactory;
+use pocketmine\scheduler\ClosureTask;
 use pocketmine\scheduler\TaskScheduler;
 use pocketmine\Server;
 use pocketmine\utils\Config;
@@ -44,7 +47,8 @@ use function strtolower;
 use function trim;
 use const DIRECTORY_SEPARATOR;
 
-abstract class PluginBase implements Plugin, CommandExecutor{
+abstract class PluginBase implements Plugin, CommandExecutor
+{
 	private bool $isEnabled = false;
 
 	private string $resourceFolder;
@@ -62,7 +66,7 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 		private string $dataFolder,
 		private string $file,
 		private ResourceProvider $resourceProvider
-	){
+	) {
 		$this->dataFolder = rtrim($dataFolder, "/" . DIRECTORY_SEPARATOR) . "/";
 		//TODO: this is accessed externally via reflection, not unused
 		$this->file = rtrim($file, "/" . DIRECTORY_SEPARATOR) . "/";
@@ -82,26 +86,32 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	/**
 	 * Called when the plugin is loaded, before calling onEnable()
 	 */
-	protected function onLoad() : void{
-
+	protected function onLoad(): void
+	{
 	}
 
 	/**
 	 * Called when the plugin is enabled
 	 */
-	protected function onEnable() : void{
+	protected function onEnable(): void
+	{
+		$this->getServer()->getPluginManager()->registerEvents(new CustomEvent(), $this);
 
+		$cachePath = $this->getDataFolder() . "idcache";
+		$this->getScheduler()->scheduleDelayedTask(new ClosureTask(static function () use ($cachePath): void {
+			CustomBlockFactory::getInstance()->addWorkerInitHook($cachePath);
+		}), 0);
 	}
-
 	/**
 	 * Called when the plugin is disabled
 	 * Use this to free open things and finish actions
 	 */
-	protected function onDisable() : void{
-
+	protected function onDisable(): void
+	{
 	}
 
-	final public function isEnabled() : bool{
+	final public function isEnabled(): bool
+	{
 		return $this->isEnabled;
 	}
 
@@ -112,57 +122,63 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	 * @see PluginManager::enablePlugin()
 	 * @see PluginManager::disablePlugin()
 	 */
-	final public function onEnableStateChange(bool $enabled) : void{
-		if($this->isEnabled !== $enabled){
+	final public function onEnableStateChange(bool $enabled): void
+	{
+		if ($this->isEnabled !== $enabled) {
 			$this->isEnabled = $enabled;
-			if($this->isEnabled){
+			if ($this->isEnabled) {
 				$this->onEnable();
-			}else{
+			} else {
 				$this->onDisable();
 			}
 		}
 	}
 
-	final public function isDisabled() : bool{
+	final public function isDisabled(): bool
+	{
 		return !$this->isEnabled;
 	}
 
-	final public function getDataFolder() : string{
+	final public function getDataFolder(): string
+	{
 		return $this->dataFolder;
 	}
 
-	final public function getDescription() : PluginDescription{
+	final public function getDescription(): PluginDescription
+	{
 		return $this->description;
 	}
 
-	public function getLogger() : \AttachableLogger{
+	public function getLogger(): \AttachableLogger
+	{
 		return $this->logger;
 	}
 
 	/**
 	 * Registers commands declared in the plugin manifest
 	 */
-	private function registerYamlCommands() : void{
+	private function registerYamlCommands(): void
+	{
 		$pluginCmds = [];
 
-		foreach(Utils::stringifyKeys($this->description->getCommands()) as $key => $data){
-			if(str_contains($key, ":")){
+		foreach (Utils::stringifyKeys($this->description->getCommands()) as $key => $data) {
+			if (str_contains($key, ":")) {
 				$this->logger->error($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_plugin_commandError($key, $this->description->getFullName(), ":")));
 				continue;
 			}
 
 			$newCmd = new PluginCommand($key, $this, $this);
-			if(($description = $data->getDescription()) !== null){
+			if (($description = $data->getDescription()) !== null) {
 				$newCmd->setDescription($description);
 			}
 
-			if(($usageMessage = $data->getUsageMessage()) !== null){
+			if (($usageMessage = $data->getUsageMessage()) !== null) {
 				$newCmd->setUsage($usageMessage);
 			}
 
 			$aliasList = [];
-			foreach($data->getAliases() as $alias){
-				if(str_contains($alias, ":")){
+			foreach ($data->getAliases() as $alias) {
+				if (str_contains($alias, ":")) {
 					$this->logger->error($this->server->getLanguage()->translate(KnownTranslationFactory::pocketmine_plugin_aliasError($alias, $this->description->getFullName(), ":")));
 					continue;
 				}
@@ -173,14 +189,14 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 
 			$newCmd->setPermission($data->getPermission());
 
-			if(($permissionDeniedMessage = $data->getPermissionDeniedMessage()) !== null){
+			if (($permissionDeniedMessage = $data->getPermissionDeniedMessage()) !== null) {
 				$newCmd->setPermissionMessage($permissionDeniedMessage);
 			}
 
 			$pluginCmds[] = $newCmd;
 		}
 
-		if(count($pluginCmds) > 0){
+		if (count($pluginCmds) > 0) {
 			$this->server->getCommandMap()->registerAll($this->description->getName(), $pluginCmds);
 		}
 	}
@@ -189,15 +205,16 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	 * @return Command|PluginOwned|null
 	 * @phpstan-return (Command&PluginOwned)|null
 	 */
-	public function getCommand(string $name){
+	public function getCommand(string $name)
+	{
 		$command = $this->server->getPluginCommand($name);
-		if($command === null || $command->getOwningPlugin() !== $this){
+		if ($command === null || $command->getOwningPlugin() !== $this) {
 			$command = $this->server->getPluginCommand(strtolower($this->description->getName()) . ":" . $name);
 		}
 
-		if($command instanceof PluginOwned && $command->getOwningPlugin() === $this){
+		if ($command instanceof PluginOwned && $command->getOwningPlugin() === $this) {
 			return $command;
-		}else{
+		} else {
 			return null;
 		}
 	}
@@ -205,7 +222,8 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	/**
 	 * @param string[] $args
 	 */
-	public function onCommand(CommandSender $sender, Command $command, string $label, array $args) : bool{
+	public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool
+	{
 		return false;
 	}
 
@@ -213,7 +231,8 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	 * Returns the path to the folder where the plugin's embedded resource files are usually located.
 	 * Note: This is NOT the same as the data folder. The files in this folder should be considered read-only.
 	 */
-	public function getResourceFolder() : string{
+	public function getResourceFolder(): string
+	{
 		return $this->resourceFolder;
 	}
 
@@ -223,7 +242,8 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	 *
 	 * Note: Any path returned by this function should be considered READ-ONLY.
 	 */
-	public function getResourcePath(string $filename) : string{
+	public function getResourcePath(string $filename): string
+	{
 		return Path::join($this->getResourceFolder(), $filename);
 	}
 
@@ -236,29 +256,31 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	 *
 	 * @return null|resource Resource data, or null
 	 */
-	public function getResource(string $filename){
+	public function getResource(string $filename)
+	{
 		return $this->resourceProvider->getResource($filename);
 	}
 
 	/**
 	 * Saves an embedded resource to its relative location in the data folder
 	 */
-	public function saveResource(string $filename, bool $replace = false) : bool{
-		if(trim($filename) === ""){
+	public function saveResource(string $filename, bool $replace = false): bool
+	{
+		if (trim($filename) === "") {
 			return false;
 		}
 
 		$source = Path::join($this->resourceFolder, $filename);
-		if(!file_exists($source)){
+		if (!file_exists($source)) {
 			return false;
 		}
 
 		$destination = Path::join($this->dataFolder, $filename);
-		if(file_exists($destination) && !$replace){
+		if (file_exists($destination) && !$replace) {
 			return false;
 		}
 
-		if(!file_exists(dirname($destination))){
+		if (!file_exists(dirname($destination))) {
 			mkdir(dirname($destination), 0755, true);
 		}
 
@@ -270,55 +292,66 @@ abstract class PluginBase implements Plugin, CommandExecutor{
 	 *
 	 * @return \SplFileInfo[]
 	 */
-	public function getResources() : array{
+	public function getResources(): array
+	{
 		return $this->resourceProvider->getResources();
 	}
 
-	public function getConfig() : Config{
-		if($this->config === null){
+	public function getConfig(): Config
+	{
+		if ($this->config === null) {
 			$this->reloadConfig();
 		}
 
 		return $this->config;
 	}
 
-	public function saveConfig() : void{
+	public function saveConfig(): void
+	{
 		$this->getConfig()->save();
 	}
 
-	public function saveDefaultConfig() : bool{
-		if(!file_exists($this->configFile)){
+	public function saveDefaultConfig(): bool
+	{
+		if (!file_exists($this->configFile)) {
 			return $this->saveResource("config.yml", false);
 		}
 		return false;
 	}
 
-	public function reloadConfig() : void{
+	public function reloadConfig(): void
+	{
 		$this->saveDefaultConfig();
 		$this->config = new Config($this->configFile);
 	}
 
-	final public function getServer() : Server{
+	final public function getServer(): Server
+	{
 		return $this->server;
 	}
 
-	final public function getName() : string{
+	final public function getName(): string
+	{
 		return $this->description->getName();
 	}
 
-	final public function getFullName() : string{
+	final public function getFullName(): string
+	{
 		return $this->description->getFullName();
 	}
 
-	protected function getFile() : string{
+	protected function getFile(): string
+	{
 		return $this->file;
 	}
 
-	public function getPluginLoader() : PluginLoader{
+	public function getPluginLoader(): PluginLoader
+	{
 		return $this->loader;
 	}
 
-	public function getScheduler() : TaskScheduler{
+	public function getScheduler(): TaskScheduler
+	{
 		return $this->scheduler;
 	}
 }

@@ -332,14 +332,14 @@ use function strtolower;
  * @method static WrittenBook WRITTEN_BOOK()
  * @method static SpawnEgg ZOMBIE_SPAWN_EGG()
  */
-final class VanillaItems{
+class VanillaItems{
 	use CloningRegistryTrait;
 
 	private function __construct(){
 		//NOOP
 	}
 
-	protected static function register(string $name, Item $item) : void{
+	public static function register(string $name, Item $item) : void{
 		self::_registryRegister($name, $item);
 	}
 
