@@ -2,6 +2,6 @@
 
 namespace pocketmine\item;
 
-class Items extends VanillaItems
+final class Items extends VanillaItems
 {
 }
